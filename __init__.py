@@ -43,20 +43,9 @@ from bpy.props import (
 #    sys.path.append(app_path)
 
 def find_scenes(video_path, threshold, start, end):
-    pybin = sys.executable  # bpy.app.binary_path_python # Use for 2.83
-    try:
-        subprocess.call([pybin, "-m", "ensurepip"])
-    except ImportError:
-        pass
-    try:
-        from scenedetect import open_video#, detect
-        from scenedetect import SceneManager
-        from scenedetect.detectors import ContentDetector
-    except ImportError:
-        subprocess.check_call([pybin, "-m", "pip", "install", "scenedetect[opencv]"])
-        from scenedetect import open_video#, detect
-        from scenedetect import SceneManager
-        from scenedetect.detectors import ContentDetector
+    from scenedetect import open_video#, detect
+    from scenedetect import SceneManager
+    from scenedetect.detectors import ContentDetector
         
     render = bpy.context.scene.render
     fps = round((render.fps / render.fps_base), 3)

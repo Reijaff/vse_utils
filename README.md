@@ -1,11 +1,5 @@
 # Shot Detection in the Blender Video Sequence Editor
 
-[![IMAGE ALT TEXT HERE](https://github.com/tin2tin/shot_detection/blob/main/shot_detect_yt.png?raw=true)](https://www.youtube.com/watch?v=zWNQMII-IAE)
-
-![alt text](https://blender.chat/file-upload/AJKEtutaWrs527Wwv/Cam.gif)
-
-Detected video: 'Caminandes : Llamigos' by Pablo Vazquez, Blender Studio
-
 ## Usage
 When installed, the operator, "Detect Shots & Split Strips", is exposed in the bottom of the Strip Menu.
 The active strip with white outline will be used for detection, and all selected strips will be split at the same points.
