@@ -32,7 +32,7 @@ import bpy
 import subprocess
 import os
 import sys
-from bpy.types import Operator
+from bpy.types import Operator, AddonPreferences
 from bpy.props import (
     IntProperty,
     BoolProperty,
@@ -57,21 +57,30 @@ def find_scenes(video_path, threshold, start, end):
 
     return scene_manager.get_scene_list()
 
+# Preferences for the addon
+class MyAddonPreferences(AddonPreferences):
+    bl_idname = __name__
+
+    split_type: EnumProperty(
+        name="Default Split Type",
+        description="Choose the default split type for shot detection",
+        items=(
+            ('SOFT', "Soft", "Split Soft"),
+            ('HARD', "Hard", "Split Hard"),
+        ),
+        default='SOFT',
+    )
+
+    def draw(self, context):
+        layout = self.layout
+        layout.prop(self, "split_type")
+
 class SEQUENCER_OT_split_selected(bpy.types.Operator):
     """Split Unlocked Un/Seleted Strips Soft"""
 
     bl_idname = "sequencer.split_selected"
     bl_label = "Split Selected"
     bl_options = {"REGISTER", "UNDO"}
-
-    type: EnumProperty(
-        name="Type",
-        description="Split Type",
-        items=(
-            ("SOFT", "Soft", "Split Soft"),
-            ("HARD", "Hard", "Split Hard"),
-        ),
-    )
 
     @classmethod
     def poll(cls, context):
@@ -83,6 +92,11 @@ class SEQUENCER_OT_split_selected(bpy.types.Operator):
         cf = bpy.context.scene.frame_current
         at_cursor = []
         cut_selected = False
+
+        # Get the default split type from preferences
+        user_preferences = context.preferences
+        addon_prefs = user_preferences.addons[__name__].preferences
+        split_type = addon_prefs.split_type
 
         # find unlocked strips at cursor
         for s in sequences:
@@ -96,7 +110,7 @@ class SEQUENCER_OT_split_selected(bpy.types.Operator):
                 s.select = True
                 bpy.ops.sequencer.split(
                     frame=cf,
-                    type=self.type,
+                    type=split_type,  # Use the split type from preferences
                     side="RIGHT",
                 )
 
@@ -155,6 +169,7 @@ def menu_detect_shots(self, context):
 classes = (
     SEQUENCER_OT_detect_shots,
     SEQUENCER_OT_split_selected,
+    MyAddonPreferences,  # Add the preferences class
 )
 
 def register():
