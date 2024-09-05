@@ -152,7 +152,7 @@ class SEQUENCER_OT_detect_shots(Operator):
         active = context.scene.sequence_editor.active_strip
         start_time = active.frame_offset_start
         end_time = active.frame_duration - active.frame_offset_end
-        scenes = find_scenes(path, 27, start_time, end_time)
+        scenes = find_scenes(path, 32, start_time, end_time)
         for scene in scenes:
             context.scene.frame_current = int(scene[1].get_frames() + active.frame_start)
             sequencer.split_selected()
