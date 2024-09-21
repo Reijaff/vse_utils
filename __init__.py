@@ -20,15 +20,12 @@ from bpy.props import (
 )
 from bpy.types import AddonPreferences, Operator
 
-# bl_info constants
-BL_INFO_VERSION = (1, 0)
-BL_INFO_BLENDER = (2, 90, 0)
 
 bl_info = {
-    "name": "vse utils (auto edit)",
+    "name": "vse utils",
     "author": "reijaff",
-    "version": BL_INFO_VERSION,
-    "blender": BL_INFO_BLENDER,
+    "version": (1, 0),
+    "blender": (2, 90, 0),
     "location": "Sequencer > Strip Menu or Context Menu",
     "description": "shot detection, audo edit, mute profanity, speechnorm filter",
     "warning": "",
@@ -515,4 +512,3 @@ def unregister():
 
 if __name__ == "__main__":
     register()
-
