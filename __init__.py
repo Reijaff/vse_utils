@@ -7,8 +7,10 @@ import requests
 import os
 import shutil
 import subprocess
-import check_swear
+
+
 import sys
+import pysubs2
 
 from auto_editor.formats import json as ae_json
 from bpy.props import (
@@ -20,6 +22,9 @@ from bpy.props import (
 )
 from bpy.types import AddonPreferences, Operator
 
+import check_swear
+
+sch = check_swear.SwearingCheck(stop_words=["ахуенно", "поебень"])
 
 bl_info = {
     "name": "vse utils",
@@ -257,7 +262,9 @@ def send_audio_for_transcription(audio_file_path, server_url):
         audio_data = audio_file.read()
         audio_base64 = base64.b64encode(audio_data).decode("utf-8")
 
-    data = {"audio_base64": audio_base64}
+    srt_file_path = tempfile.NamedTemporaryFile(suffix=".srt", delete=False)
+
+    data = {"audio_base64": audio_base64, "srt_file_path": srt_file_path.name}
 
     try:
         response = requests.post(server_url, json=data)
@@ -267,7 +274,7 @@ def send_audio_for_transcription(audio_file_path, server_url):
         # print(transcription_data)
     except requests.exceptions.RequestException as e:
         print(f"Error sending audio for transcription: {e}")
-    return transcription_data
+    return (transcription_data, srt_file_path.name)
 
 
 def get_selected_strips():
@@ -323,6 +330,68 @@ def create_temp_sound_mixdown(selected_strips):
     return (audio_start, audio_end, tmp_file.name)
 
 
+def add_subs(start_frame, srt_file_path):
+
+    # Load the SRT file
+    subs = pysubs2.load(srt_file_path)
+
+    # Get the current scene
+    scene = bpy.context.scene
+
+    # Ensure there's a sequence in the VSE
+    if not scene.sequence_editor:
+        scene.sequence_editor_create()
+    sequencer = scene.sequence_editor
+
+    next_channel = max((s.channel for s in bpy.context.sequences), default=0) + 1
+    text_strip = None
+
+    # Add each subtitle as a text strip
+    for sub in subs:
+
+        if sub.text.strip() == "":
+            continue
+
+        # Calculate the start and end frames based on the subtitle timings and the specified start_frame
+        start_frame_sub = start_frame + int((sub.start / 1000) * scene.render.fps)
+        end_frame_sub = start_frame + int((sub.end / 1000) * scene.render.fps)
+
+        print(start_frame_sub, end_frame_sub, sub.text)
+
+        if start_frame_sub == end_frame_sub:
+            continue
+
+        # Create a text strip
+        text_strip = sequencer.sequences.new_effect(
+            name=sub.text,
+            type="TEXT",
+            channel=next_channel,
+            frame_start=start_frame_sub,
+            frame_end=end_frame_sub,
+        )
+
+        # Set the subtitle text
+        tmp_list = []
+        for word in sub.text.split():
+            if sch.predict(word)[0]:
+                tmp_list.append("###")
+            else:
+                tmp_list.append(word)
+        censured_text = " ".join(tmp_list)
+        text_strip.text = censured_text
+        #
+
+        text_strip.font_size = 70
+        text_strip.use_bold = True
+        text_strip.use_italic = True
+        text_strip.use_shadow = True
+        text_strip.use_outline = True
+        text_strip.location[0] = 0.5
+        text_strip.location[1] = 0.2
+
+    print("Subtitles added successfully!")
+
+
 class SEQUENCER_OT_mute_audio_profanity(Operator):
 
     bl_idname = "sequencer.mute_audio_profanity"
@@ -357,15 +426,14 @@ class SEQUENCER_OT_mute_audio_profanity(Operator):
             get_selected_strips()
         )
 
-        # Transcription
         server_url = "http://localhost:5302/transcribe"
-        transcription_data = send_audio_for_transcription(
+        transcription_data, srt_file_path = send_audio_for_transcription(
             tmp_audiofile_path, server_url
         )
 
-        if transcription_data:
+        next_channel = max((s.channel for s in bpy.context.sequences), default=0) + 1
 
-            sch = check_swear.SwearingCheck()
+        if transcription_data:
 
             # print(transcription_data["segments"])
 
@@ -409,10 +477,30 @@ class SEQUENCER_OT_mute_audio_profanity(Operator):
                         )
                         marker.frame = context.scene.frame_current
 
+                        #
+
+                        tmp_bass_file = os.path.dirname(__file__) + "/bass.wav"
+
+                        newStrip = context.scene.sequence_editor.sequences.new_sound(
+                            name=os.path.basename(tmp_bass_file),
+                            filepath=tmp_bass_file,
+                            channel=next_channel,
+                            frame_start=audio_start + tmp_start,
+                        )
+                        newStrip.show_waveform = True
+                        newStrip.sound.use_mono = True
+                        newStrip.volume = 0.05
+                        newStrip.animation_offset_start = 5
+                        newStrip.frame_final_duration = tmp_end - tmp_start - 1
+
+                        #
+
         else:
             print("Transcription failed or returned no data")
 
         os.remove(tmp_audiofile_path)
+
+        add_subs(audio_start, srt_file_path)
 
         return {"FINISHED"}
 
