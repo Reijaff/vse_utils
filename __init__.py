@@ -24,7 +24,7 @@ from bpy.types import AddonPreferences, Operator
 
 import check_swear
 
-sch = check_swear.SwearingCheck(stop_words=["ахуенно", "поебень"])
+sch = check_swear.SwearingCheck(stop_words=["ахуенно", "поебень", "поебалу", "выпиздили"])
 
 bl_info = {
     "name": "vse utils",
