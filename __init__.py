@@ -558,7 +558,7 @@ class SEQUENCER_OT_speechnorm(Operator):
                 name=os.path.basename(tmp_file.name),
                 filepath=tmp_file.name,
                 channel=next_channel,
-                frame_start=context.scene.frame_current,
+                frame_start=bpy.context.scene.sequence_editor.active_strip.final_start_frame,
             )
             new_strip.show_waveform = True
 
