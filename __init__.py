@@ -511,7 +511,7 @@ class SEQUENCER_OT_mute_audio_profanity(Operator):
 
         os.remove(tmp_audiofile_path)
 
-        add_subs(audio_start, srt_file_path)
+        # add_subs(audio_start, srt_file_path)
 
         return {"FINISHED"}
 
