@@ -24,7 +24,7 @@ from bpy.types import AddonPreferences, Operator
 
 import check_swear
 
-sch = check_swear.SwearingCheck(stop_words=["ахуенно", "поебень", "поебалу", "выпиздили"])
+sch = check_swear.SwearingCheck(stop_words=["ахуенно", "поебень", "поебалу", "выпиздили" ])
 
 bl_info = {
     "name": "vse utils",
@@ -201,7 +201,9 @@ class SEQUENCER_OT_auto_editor_audio(Operator):
         command = [
             "auto-editor",
             tmp_audiofile_path,
-            "--export_as_json",  # Ensure JSON output
+            "--export_as_json",
+            "--frame-rate",
+            str(bpy.context.scene.render.fps),
         ]
 
         # Run Auto-Editor
@@ -223,6 +225,8 @@ class SEQUENCER_OT_auto_editor_audio(Operator):
         # Load JSON from the cached location
         timeline = ae_json.read_json(cached_json_path, auto_editor.utils.log.Log())
 
+        content_array = []
+
         # Make cuts in the sequencer
         for video_clips in timeline.a:
             for clip in video_clips:
@@ -234,6 +238,13 @@ class SEQUENCER_OT_auto_editor_audio(Operator):
                 bpy.ops.sequencer.select_all(action="SELECT")
                 bpy.ops.sequencer.split(type="SOFT")
 
+                content_array.append(
+                    [
+                        int(clip.offset + audio_start),
+                        int(clip.offset + clip.dur + audio_start),
+                    ]
+                )
+
         bpy.ops.sequencer.select_all(action="DESELECT")
 
         strips_in_range = [
@@ -244,8 +255,12 @@ class SEQUENCER_OT_auto_editor_audio(Operator):
         ]
 
         for i, strip in enumerate(strips_in_range):
-            if i % 4 == 0 or i % 4 == 1:
-                strip.select = True
+            for strc in content_array:
+                if (
+                    strip.frame_final_start >= strc[0]
+                    and strip.frame_final_end <= strc[1]
+                ):
+                    strip.select = True
 
         context.scene.frame_current = cf
 
@@ -442,11 +457,7 @@ class SEQUENCER_OT_mute_audio_profanity(Operator):
                     if sch.predict(word["text"].lower().strip())[0]:
                         tmp_start = int(word["start"] * fps)
                         tmp_end = int(word["end"] * fps)
-
-                        # print(tmp_start, tmp_end)
-
                         # start
-
                         context.scene.frame_current = audio_start + tmp_start
 
                         # sequencer.select_all(action="SELECT")
