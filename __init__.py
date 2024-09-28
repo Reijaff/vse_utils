@@ -585,12 +585,221 @@ def menu_detect_shots(self, context):
     self.layout.operator("sequencer.speechnorm")
 
 
+
+def find_segments(arr):
+    """
+    Finds the start and end indices of consecutive 1s in an array.
+
+    Args:
+      arr: The input array.
+
+    Returns:
+      A list of tuples, where each tuple represents a segment of 1s
+      and contains the start and end indices (inclusive) of the segment.
+    """
+
+    segments = []
+    start = None
+    for i, val in enumerate(arr):
+        if val == 1:
+            if start is None:
+                start = i
+        elif start is not None:  # val == 0
+            segments.append((start, i - 1))
+            start = None
+
+    if start is not None:
+        segments.append((start, len(arr) - 1))
+
+    return segments
+
+
+def process_segmentation_data(data):
+    """
+    Processes segmentation data from a JSON file.
+
+    Args:
+      data: The loaded JSON data.
+
+    Returns:
+      A list of lists, where each inner list contains the start and end times
+      of a segment in seconds.
+    """
+    global_segments = []
+
+    for _, v in data.items():
+        wav_splits = v["wav_splits"]
+        sampling_rate = v["sampling_rate"]
+        segments = v["segments"]
+        start_time = v["start_time"]
+
+        times = [((s["start"] + s["stop"]) / 2) / sampling_rate for s in wav_splits]
+        segment_indices = find_segments(segments)
+        # segment_times = [
+        #     [start_time + times[start], start_time + times[end]]
+        #     for start, end in segment_indices
+        # ]
+        segment_times = []
+        for start, end in segment_indices:
+            tmp_start = 0 if times[start] < 4 else times[start]
+            segment_start_time = start_time + tmp_start
+            segment_end_time = start_time + times[end]
+            segment_times.append([segment_start_time, segment_end_time])
+
+        global_segments.append(segment_times)
+        # return segment_times  # Return here instead of using exit()
+    return global_segments
+
+
+
+class SpeechSegmentationProps(bpy.types.PropertyGroup):
+    """Property group to store the sample audio path."""
+
+    sample_audio_path: StringProperty(
+        name="Sample Audio Path",
+        description="Path to the sample audio file",
+        default="",
+        subtype="FILE_PATH",  # This creates a file selector
+    )
+
+
+class SpeechSegmentationOperator(bpy.types.Operator):
+    bl_idname = "vse.speech_segmentation"
+    bl_label = "Speech Segmentation"
+    bl_options = {"REGISTER", "UNDO"}
+
+    @classmethod
+    def poll(cls, context):
+        scene = context.scene
+        if not (scene and scene.sequence_editor and scene.sequence_editor.active_strip):
+            return False
+
+        if scene.sequence_editor.active_strip.type != "SOUND":
+            return False
+
+        return True
+
+    def execute(self, context):
+        strip = context.scene.sequence_editor.active_strip
+        props = context.scene.speech_segmentation_props
+
+        server_url = "http://localhost:5303/api/segment"
+        sample_audio_path = props.sample_audio_path
+
+        if not sample_audio_path:
+            self.report({"ERROR"}, "Please specify a sample audio file path.")
+            return {"CANCELLED"}
+
+        main_audio_path = os.path.abspath(
+            bpy.path.abspath(context.scene.sequence_editor.active_strip.sound.filepath)
+        )
+
+        try:
+            response = requests.post(
+                server_url,
+                data={"main_path": main_audio_path, "sample_path": sample_audio_path},
+            )
+            response.raise_for_status()
+        except requests.exceptions.RequestException as e:
+            print(f"Error sending request: {e}")
+            self.report({"ERROR"}, f"Error sending request: {e}")
+            return {"CANCELLED"}
+
+        print(response.json())
+
+        data1 = response.json()
+        sd_path = Path(data1["segmentation_data"])
+
+        data2 = None
+        with open(data1["segmentation_data"], "r", encoding="utf-8") as f:
+            data2 = json.load(f)
+
+        segments_times = process_segmentation_data(data2)
+
+        ffs = context.scene.sequence_editor.active_strip.frame_final_start
+        delta = 0.3
+
+        fps = bpy.context.scene.render.fps
+        for big_segment in segments_times:
+            for times1 in big_segment:
+                times_frame_start = int((times1[0] - delta) * fps)
+                times_frame_end = int((times1[1] + delta) * fps)
+
+                bpy.ops.sequencer.effect_strip_add(
+                    type="COLOR",
+                    frame_start=times_frame_start + ffs,
+                    frame_end=times_frame_end + ffs,
+                    channel=1,
+                )
+
+                bpy.ops.sequencer.select_all(action="SELECT")
+
+                bpy.ops.sequencer.split(
+                    frame=times_frame_start + ffs,
+                    type="SOFT",
+                    side="RIGHT",
+                )
+
+                bpy.ops.sequencer.select_all(action="SELECT")
+
+                bpy.ops.sequencer.split(
+                    frame=times_frame_end + ffs,
+                    type="SOFT",
+                    side="RIGHT",
+                )
+
+        color_strips = []
+        sequences = bpy.context.scene.sequence_editor.sequences_all
+        for seq in sequences:
+            if seq.channel == 1:
+                color_strips.append(seq)
+
+        bpy.ops.sequencer.select_all(action="DESELECT")
+        for col in color_strips:
+            if int((col.frame_final_end - col.frame_final_start) / fps) > 18:
+                sequences = bpy.context.scene.sequence_editor.sequences_all
+
+                for seq in sequences:
+                    if (
+                        seq.frame_final_start >= col.frame_final_start
+                        and seq.frame_final_end <= col.frame_final_end
+                        and seq.channel != 1
+                    ):
+                        seq.select = True
+                        # color_strips.append(seq)
+
+        self.report({"INFO"}, "Speech segmentation complete!")
+        return {"FINISHED"}
+
+
+class SpeechSegmentationPanel(bpy.types.Panel):
+    """Panel for speech segmentation settings."""
+
+    bl_label = "Speech Segmentation"
+    bl_idname = "SCENE_PT_speech_segmentation"
+    bl_space_type = "SEQUENCE_EDITOR"
+    bl_region_type = "UI"
+    bl_category = "Strip"
+
+    def draw(self, context):
+        layout = self.layout
+        props = context.scene.speech_segmentation_props
+
+        layout.prop(props, "sample_audio_path")  # File path input field
+        layout.operator("vse.speech_segmentation")
+
+
+
+
 classes = (
     SEQUENCER_OT_detect_shots,
     SEQUENCER_OT_split_selected,
     SEQUENCER_OT_auto_editor_audio,
     SEQUENCER_OT_mute_audio_profanity,
     SEQUENCER_OT_speechnorm,
+    SpeechSegmentationOperator, 
+    SpeechSegmentationProps, 
+    SpeechSegmentationPanel
     MyAddonPreferences,
 )
 
@@ -600,6 +809,9 @@ def register():
         bpy.utils.register_class(cls)
     bpy.types.SEQUENCER_MT_context_menu.append(menu_detect_shots)
     bpy.types.SEQUENCER_MT_strip.append(menu_detect_shots)
+        bpy.types.Scene.speech_segmentation_props = bpy.props.PointerProperty(
+        type=SpeechSegmentationProps
+    )
 
 
 def unregister():
@@ -607,6 +819,7 @@ def unregister():
         bpy.utils.unregister_class(cls)
     bpy.types.SEQUENCER_MT_context_menu.remove(menu_detect_shots)
     bpy.types.SEQUENCER_MT_strip.remove(menu_detect_shots)
+    del bpy.types.Scene.speech_segmentation_props
 
 
 if __name__ == "__main__":
