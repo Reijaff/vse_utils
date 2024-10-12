@@ -7,6 +7,10 @@ import requests
 import os
 import shutil
 import subprocess
+from tqdm import tqdm
+
+import warnings
+
 
 
 import sys
@@ -23,6 +27,9 @@ from bpy.props import (
 from bpy.types import AddonPreferences, Operator
 
 import check_swear
+
+# Ignore all InconsistentVersionWarning warnings
+warnings.filterwarnings("ignore", category=UserWarning, module="sklearn") 
 
 sch = check_swear.SwearingCheck(stop_words=["ахуенно", "поебень", "поебалу", "выпиздили" ])
 
@@ -362,7 +369,7 @@ def add_subs(start_frame, srt_file_path):
     text_strip = None
 
     # Add each subtitle as a text strip
-    for sub in subs:
+    for sub in tqdm(subs):
 
         if sub.text.strip() == "":
             continue
@@ -371,7 +378,7 @@ def add_subs(start_frame, srt_file_path):
         start_frame_sub = start_frame + int((sub.start / 1000) * scene.render.fps)
         end_frame_sub = start_frame + int((sub.end / 1000) * scene.render.fps)
 
-        print(start_frame_sub, end_frame_sub, sub.text)
+        # print(start_frame_sub, end_frame_sub, sub.text)
 
         if start_frame_sub == end_frame_sub:
             continue
@@ -452,7 +459,7 @@ class SEQUENCER_OT_mute_audio_profanity(Operator):
 
             # print(transcription_data["segments"])
 
-            for seg in transcription_data["segments"]:
+            for seg in tqdm(transcription_data["segments"]):
                 for word in seg["words"]:
                     if sch.predict(word["text"].lower().strip())[0]:
                         tmp_start = int(word["start"] * fps)
@@ -506,12 +513,15 @@ class SEQUENCER_OT_mute_audio_profanity(Operator):
 
                         #
 
+            # need to cache swear_check from previous runs, optimize swear_check ( runs twice on same words )
+            # move sub generating file functionality here, process words here, then send them to audio bass and subs
+            # add_subs(audio_start, srt_file_path) 
+
         else:
             print("Transcription failed or returned no data")
 
         os.remove(tmp_audiofile_path)
 
-        # add_subs(audio_start, srt_file_path)
 
         return {"FINISHED"}
 
@@ -799,7 +809,7 @@ classes = (
     SEQUENCER_OT_speechnorm,
     SpeechSegmentationOperator, 
     SpeechSegmentationProps, 
-    SpeechSegmentationPanel
+    SpeechSegmentationPanel,
     MyAddonPreferences,
 )
 
@@ -809,7 +819,7 @@ def register():
         bpy.utils.register_class(cls)
     bpy.types.SEQUENCER_MT_context_menu.append(menu_detect_shots)
     bpy.types.SEQUENCER_MT_strip.append(menu_detect_shots)
-        bpy.types.Scene.speech_segmentation_props = bpy.props.PointerProperty(
+    bpy.types.Scene.speech_segmentation_props = bpy.props.PointerProperty(
         type=SpeechSegmentationProps
     )
 
